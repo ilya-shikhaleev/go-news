@@ -12,7 +12,7 @@ type Parser struct {
 }
 
 func (p *Parser) Parse() ([]string, error) {
-	req, err := http.NewRequest("GET", p.url, nil)
+	req, err := http.NewRequest(http.MethodGet, p.url, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -28,49 +28,26 @@ func (p *Parser) Parse() ([]string, error) {
 }
 
 func (p *Parser) parseResponse(resp *http.Response) ([]string, error) {
-
-	if resp.Status != "200 OK" {
+	if resp.StatusCode != http.StatusOK {
 		return nil, errors.New("Returned status " + resp.Status)
 	}
+
 	doc, err := html.Parse(resp.Body)
 	if err != nil {
 		return nil, err
 	}
 
-	articles := p.findNodes(doc)
-
-	var f func(*html.Node, *string)
-	f = func(article *html.Node, text *string) {
-		for c := article.FirstChild; c != nil; c = c.NextSibling {
-			if c.Type == html.ElementNode && c.Data == "a" {
-				href := ""
-				for _, attr := range c.Attr {
-					if attr.Key == "href" {
-						href = attr.Val
-					}
-				}
-				*text += "<a href='" + href + "'>"
-			}
-			if c.Type == html.TextNode {
-				*text += c.Data
-			}
-			f(c, text)
-			if c.Type == html.ElementNode && c.Data == "a" {
-				*text += "</a>"
-			}
-		}
-	}
-
+	articles := p.findArticles(doc)
 	texts := make([]string, 0)
 	for _, article := range articles {
 		text := ""
-		f(article, &text)
+		addLinks(article, &text)
 		texts = append(texts, text)
 	}
 	return texts, nil
 }
 
-func (p *Parser) findNodes(doc *html.Node) []*html.Node {
+func (p *Parser) findArticles(doc *html.Node) []*html.Node {
 	articles := make([]*html.Node, 0)
 
 	var f func(*html.Node)
@@ -89,6 +66,27 @@ func (p *Parser) findNodes(doc *html.Node) []*html.Node {
 	f(doc)
 
 	return articles
+}
+
+func addLinks(article *html.Node, text *string) {
+	for c := article.FirstChild; c != nil; c = c.NextSibling {
+		if c.Type == html.ElementNode && c.Data == "a" {
+			href := ""
+			for _, attr := range c.Attr {
+				if attr.Key == "href" {
+					href = attr.Val
+				}
+			}
+			*text += "<a href='" + href + "'>"
+		}
+		if c.Type == html.TextNode {
+			*text += c.Data
+		}
+		addLinks(c, text)
+		if c.Type == html.ElementNode && c.Data == "a" {
+			*text += "</a>"
+		}
+	}
 }
 
 func NewParser(url, class string) *Parser {
